@@ -8,12 +8,19 @@ export function createFrameLoop({
   ubo,
   camera,
   ui,
+  physics,           // NEW
 }) {
   const lightPos = [4, 2, 0, 1];
-  const uboSize = ubo.size ?? (16 * 4 + 4 * 4 * 6); 
+  // UPDATED fallback UBO size (mvp + model + 6 vec4)
+  const uboSize = ubo.size ?? (16 * 4 * 2 + 4 * 4 * 6);
 
   return function start() {
     function frame() {
+
+      // --- PHYSICS STEP (fixed 60Hz) ---
+      physics.step(1 / 60);
+      const [bx, by, bz] = physics.getBallPosition();
+
       const canvas = context.canvas;
       const dpr = window.devicePixelRatio || 1;
       const aspect = (canvas.clientWidth * dpr) / (canvas.clientHeight * dpr);
@@ -39,17 +46,24 @@ export function createFrameLoop({
 
       const view = lookAt(vec3(eye[0], eye[1], eye[2]), vec3(0, 0, 0), vec3(0, 1, 0));
       const MVP = mult(proj, view);
-      // UI
+
+      // NEW: model matrix from physics position (simple translation)
+      const model = translate(bx, by, bz);
+
+      // UI / material params
       const kdScale = 1.8;
       const ksScale = 50;
       const shininess = 1008;
       const Le = 10;
       const La = 0.3;
 
-
       const data = new Float32Array(uboSize / 4);
       let o = 0;
+      // mvp
       data.set(flatten(MVP), o); o += 16;
+      // model (NEW)
+      data.set(flatten(model), o); o += 16;
+      // eye, light, materials etc.
       data.set(eye, o); o += 4;
       data.set(lightPos, o); o += 4;
       data.set([1, 1, 1, 0], o); o += 4;
