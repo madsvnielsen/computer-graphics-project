@@ -1,3 +1,4 @@
+import { Constants } from "../config/Constants.js";
 export function createFrameLoop({
   device,
   context,
@@ -65,7 +66,7 @@ export function createFrameLoop({
           view: context.getCurrentTexture().createView(),
           loadOp: "clear",
           storeOp: "store",
-          clearValue: { r: 0.2, g: 0.5, b: 0.8, a: 1 },
+          clearValue: Constants.ClearColor,
         }],
         depthStencilAttachment: {
           view: depth.view,
