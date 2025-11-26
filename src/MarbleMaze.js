@@ -10,11 +10,10 @@ export async function runMarbleMaze({ canvas, ui }) {
     return;
   }
 
-  // NEW: initialize Ammo from global script
-  const AmmoLib = await Ammo();
-
+  // --- WebGPU init ---
   const { device, context, canvasFormat } = await initWebGPU(canvas);
 
+  // --- Load WGSL shader code ---
   const wgslScript = document.getElementById("wgsl");
   const code = wgslScript
     ? await fetch(wgslScript.src, { cache: "reload" }).then(r => r.text())
@@ -22,6 +21,7 @@ export async function runMarbleMaze({ canvas, ui }) {
 
   const pipeline = createPipeline(device, canvasFormat, code);
 
+  // --- Depth buffer ---
   const depth = { texture: null, view: null, width: 0, height: 0 };
 
   function ensureDepth() {
@@ -41,23 +41,44 @@ export async function runMarbleMaze({ canvas, ui }) {
   }
   ensureDepth();
 
-  const { vbuf, nbuf, cbuf, ibuf, indexCount } =
+  // --- Load sphere model ---
+  const { vbuf, nbuf, uvbuf, ibuf, indexCount } =
     await loadModelBuffers(device, "../models/sphere.obj");
 
-  // NEW: include extra mat4 (model)
+  // --- Uniform buffer (MVP + model + 6 vec4s) ---
   const uboSize = 16 * 4 * 2 + 4 * 4 * 6;
   const ubo = device.createBuffer({
     size: uboSize,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
-  const bindGroup = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: ubo } }],
+  // --- Load textures (Polyhaven ball) ---
+  // NOTE: change file names/paths to match your actual files
+  const texColor = await loadTexture(device, "../textures/ball_diff_4k.jpg");
+  //const texNormal = await loadTexture(device, "../textures/ball_nor_gl_4k.png");
+  // Prefer PNG/JPG instead of EXR for the browser:
+  //const texRough = await loadTexture(device, "../textures/ball_rough_4k.png");
+
+  const sampler = device.createSampler({
+    magFilter: "linear",
+    minFilter: "linear",
   });
+
+  // --- Bind group (must match WGSL bindings) ---
+// --- Bind group (must match WGSL bindings) ---
+const bindGroup = device.createBindGroup({
+  layout: pipeline.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: ubo } },  // U
+    { binding: 1, resource: texColor },         // myColorTex
+    { binding: 2, resource: sampler },          // mySampler
+  ],
+});
+
 
   const camera = createCameraController(canvas);
 
+  // --- Resize handling ---
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     const w = Math.floor(canvas.clientWidth * dpr);
@@ -71,26 +92,30 @@ export async function runMarbleMaze({ canvas, ui }) {
   window.addEventListener("resize", resize);
   resize();
 
-  // NEW: init physics (floor + ball)
+  // --- Initialize Ammo physics (global Ammo from script tag) ---
+  const AmmoLib = await Ammo();
   const physics = initPhysics(AmmoLib);
 
+  // --- Frame loop (render + physics) ---
   const startFrameLoop = createFrameLoop({
     device,
     context,
     pipeline,
     bindGroup,
-    buffers: { vbuf, nbuf, cbuf, ibuf, indexCount },
+    buffers: { vbuf, nbuf, uvbuf, ibuf, indexCount },
     depth,
     ubo,
     camera,
     ui,
-    physics,        // NEW
+    physics,
   });
 
   startFrameLoop();
 }
 
-// NEW: Physics helper
+// ----------------------
+// Physics helper
+// ----------------------
 function initPhysics(Ammo) {
   const collisionConfig = new Ammo.btDefaultCollisionConfiguration();
   const dispatcher = new Ammo.btCollisionDispatcher(collisionConfig);
@@ -125,7 +150,7 @@ function initPhysics(Ammo) {
   }
 
   // BALL (dynamic sphere)
-  const radius = 1;   // should match your sphere.obj radius
+  const radius = 1;   // should match sphere.obj radius
   const startHeight = 5;
   const ballShape = new Ammo.btSphereShape(radius);
   const ballTransform = new Ammo.btTransform();
@@ -157,4 +182,32 @@ function initPhysics(Ammo) {
       return [origin.x(), origin.y(), origin.z()];
     },
   };
+}
+
+// ----------------------
+// Texture loader helper
+// ----------------------
+async function loadTexture(device, url) {
+  const img = new Image();
+  img.src = url;
+  img.crossOrigin = "anonymous";
+  await img.decode();
+
+  const bitmap = await createImageBitmap(img);
+  const texture = device.createTexture({
+    size: [bitmap.width, bitmap.height],
+    format: "rgba8unorm",
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+
+  device.queue.copyExternalImageToTexture(
+    { source: bitmap },
+    { texture },
+    [bitmap.width, bitmap.height]
+  );
+
+  return texture.createView();
 }

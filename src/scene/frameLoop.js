@@ -93,7 +93,8 @@ export function createFrameLoop({
       pass.setBindGroup(0, bindGroup);
       pass.setVertexBuffer(0, buffers.vbuf);
       pass.setVertexBuffer(1, buffers.nbuf);
-      pass.setVertexBuffer(2, buffers.cbuf);
+      pass.setVertexBuffer(2, buffers.uvbuf)
+      //pass.setVertexBuffer(2, buffers.cbuf);
       pass.setIndexBuffer(buffers.ibuf, "uint32");
       pass.drawIndexed(buffers.indexCount);
       pass.end();

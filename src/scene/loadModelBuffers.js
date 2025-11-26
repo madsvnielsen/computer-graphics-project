@@ -17,7 +17,7 @@ export async function loadModelBuffers(device, url) {
 
   const vbuf = makeVB(positions, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
   const nbuf = makeVB(normals,   GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
-  const cbuf = makeVB(colors,    GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
+ // const cbuf = makeVB(colors,    GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
 
   const ibuf = device.createBuffer({
     size: indices.byteLength,
@@ -25,5 +25,12 @@ export async function loadModelBuffers(device, url) {
   });
   device.queue.writeBuffer(ibuf, 0, indices);
 
-  return { vbuf, nbuf, cbuf, ibuf, indexCount: indices.length };
+  const uvbuf = device.createBuffer({
+    size: uvData.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(uvbuf, 0, uvData);
+  
+
+  return { vbuf, nbuf, uvbuf, ibuf, indexCount: indices.length };
 }
