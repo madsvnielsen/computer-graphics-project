@@ -39,7 +39,7 @@ export async function runMarbleMaze({ canvas, ui }) {
   ensureDepth();
 
   const { vbuf, nbuf, cbuf, ibuf, indexCount } =
-    await loadModelBuffers(device, "../models/Ocean.obj");
+    await loadModelBuffers(device, "../models/sphere.obj");
 
   const uboSize = 16 * 4 + 4 * 4 * 6;
   const ubo = device.createBuffer({
