@@ -9,8 +9,8 @@ export function createFrameLoop({
   camera,
   ui,
 }) {
-  const lightPos = [0, 4, 0, 1];
-  const uboSize = ubo.size ?? (16 * 4 + 4 * 4 * 6); // or hardcode
+  const lightPos = [4, 2, 0, 1];
+  const uboSize = ubo.size ?? (16 * 4 + 4 * 4 * 6); 
 
   return function start() {
     function frame() {
@@ -39,13 +39,13 @@ export function createFrameLoop({
 
       const view = lookAt(vec3(eye[0], eye[1], eye[2]), vec3(0, 0, 0), vec3(0, 1, 0));
       const MVP = mult(proj, view);
-
       // UI
-      const kdScale = parseFloat(ui.kd.value);
-      const ksScale = parseFloat(ui.ks.value);
-      const shininess = parseFloat(ui.shininess.value);
-      const Le = parseFloat(ui.Le.value);
-      const La = parseFloat(ui.La.value);
+      const kdScale = 1.8;
+      const ksScale = 50;
+      const shininess = 1008;
+      const Le = 10;
+      const La = 0.3;
+
 
       const data = new Float32Array(uboSize / 4);
       let o = 0;
