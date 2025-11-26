@@ -76,8 +76,9 @@ fn main_fs(
   let rdv  = max(dot(r, v), 0.0);
   let spec = U.ks.rgb * (Le * pow(rdv, shininess) * ksScale) * atten;
 
-  let finalColor = baseColor;
-  //clamp(ambient + diffuse + spec, vec3<f32>(0.0), vec3<f32>(10.0));
+  let finalColor = clamp(ambient + diffuse + spec, vec3<f32>(0.0), vec3<f32>(10.0));
 
-  return vec4<f32>(uv, 0.0, 1.0);
+  return vec4<f32>(finalColor, 1.0);
+    //return vec4<f32>(uv, 0.0, 1.0);
+
 }
