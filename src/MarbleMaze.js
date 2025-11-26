@@ -10,6 +10,9 @@ export async function runMarbleMaze({ canvas, ui }) {
     return;
   }
 
+  // NEW: initialize Ammo from global script
+  const AmmoLib = await Ammo();
+
   const { device, context, canvasFormat } = await initWebGPU(canvas);
 
   const wgslScript = document.getElementById("wgsl");
@@ -41,7 +44,8 @@ export async function runMarbleMaze({ canvas, ui }) {
   const { vbuf, nbuf, cbuf, ibuf, indexCount } =
     await loadModelBuffers(device, "../models/sphere.obj");
 
-  const uboSize = 16 * 4 + 4 * 4 * 6;
+  // NEW: include extra mat4 (model)
+  const uboSize = 16 * 4 * 2 + 4 * 4 * 6;
   const ubo = device.createBuffer({
     size: uboSize,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -67,6 +71,9 @@ export async function runMarbleMaze({ canvas, ui }) {
   window.addEventListener("resize", resize);
   resize();
 
+  // NEW: init physics (floor + ball)
+  const physics = initPhysics(AmmoLib);
+
   const startFrameLoop = createFrameLoop({
     device,
     context,
@@ -77,7 +84,77 @@ export async function runMarbleMaze({ canvas, ui }) {
     ubo,
     camera,
     ui,
+    physics,        // NEW
   });
 
   startFrameLoop();
+}
+
+// NEW: Physics helper
+function initPhysics(Ammo) {
+  const collisionConfig = new Ammo.btDefaultCollisionConfiguration();
+  const dispatcher = new Ammo.btCollisionDispatcher(collisionConfig);
+  const broadphase = new Ammo.btDbvtBroadphase();
+  const solver = new Ammo.btSequentialImpulseConstraintSolver();
+  const dynamicsWorld = new Ammo.btDiscreteDynamicsWorld(
+    dispatcher,
+    broadphase,
+    solver,
+    collisionConfig
+  );
+  dynamicsWorld.setGravity(new Ammo.btVector3(0, -9.81, 0));
+
+  // FLOOR (static box)
+  {
+    const groundShape = new Ammo.btBoxShape(new Ammo.btVector3(50, 1, 50));
+    const groundTransform = new Ammo.btTransform();
+    groundTransform.setIdentity();
+    groundTransform.setOrigin(new Ammo.btVector3(0, -1, 0)); // y = -1
+
+    const mass = 0;
+    const motionState = new Ammo.btDefaultMotionState(groundTransform);
+    const localInertia = new Ammo.btVector3(0, 0, 0);
+    const rbInfo = new Ammo.btRigidBodyConstructionInfo(
+      mass,
+      motionState,
+      groundShape,
+      localInertia
+    );
+    const body = new Ammo.btRigidBody(rbInfo);
+    dynamicsWorld.addRigidBody(body);
+  }
+
+  // BALL (dynamic sphere)
+  const radius = 1;   // should match your sphere.obj radius
+  const startHeight = 5;
+  const ballShape = new Ammo.btSphereShape(radius);
+  const ballTransform = new Ammo.btTransform();
+  ballTransform.setIdentity();
+  ballTransform.setOrigin(new Ammo.btVector3(0, startHeight, 0));
+
+  const ballMass = 1;
+  const ballInertia = new Ammo.btVector3(0, 0, 0);
+  ballShape.calculateLocalInertia(ballMass, ballInertia);
+  const ballMotionState = new Ammo.btDefaultMotionState(ballTransform);
+  const ballRbInfo = new Ammo.btRigidBodyConstructionInfo(
+    ballMass,
+    ballMotionState,
+    ballShape,
+    ballInertia
+  );
+  const ballBody = new Ammo.btRigidBody(ballRbInfo);
+  dynamicsWorld.addRigidBody(ballBody);
+
+  const tmpTransform = new Ammo.btTransform();
+
+  return {
+    step(dt) {
+      dynamicsWorld.stepSimulation(dt, 10);
+    },
+    getBallPosition() {
+      ballBody.getMotionState().getWorldTransform(tmpTransform);
+      const origin = tmpTransform.getOrigin();
+      return [origin.x(), origin.y(), origin.z()];
+    },
+  };
 }

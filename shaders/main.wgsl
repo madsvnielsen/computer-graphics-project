@@ -1,19 +1,21 @@
 struct Uniforms {
   mvp      : mat4x4<f32>,
-  eye      : vec4<f32>,   
-  lightPos : vec4<f32>,   
-  kd_u     : vec4<f32>,  
-  ks       : vec4<f32>,   
-  scales   : vec4<f32>, 
-  ambient  : vec4<f32>,   
+  model    : mat4x4<f32>,   // NEW: model/world matrix
+  eye      : vec4<f32>,
+  lightPos : vec4<f32>,
+  kd_u     : vec4<f32>,
+  ks       : vec4<f32>,
+  scales   : vec4<f32>,
+  ambient  : vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> U : Uniforms;
+
 
 struct VSOut {
   @builtin(position) clipPos : vec4<f32>,
   @location(0) posOS : vec3<f32>,
   @location(1) nOS   : vec3<f32>,
-  @location(2) kdCol : vec3<f32>,  
+  @location(2) kdCol : vec3<f32>,
 };
 
 @vertex
@@ -21,12 +23,18 @@ fn main_vs(@location(0) pos: vec4<f32>,
            @location(1) nrm: vec4<f32>,
            @location(2) col: vec4<f32>) -> VSOut {
   var out : VSOut;
-  out.clipPos = U.mvp * pos;
-  out.posOS   = pos.xyz;
-  out.nOS     = normalize(nrm.xyz); 
+
+  // Transform to world space using model matrix
+  let worldPos = U.model * pos;
+  let worldNrm = (U.model * vec4<f32>(nrm.xyz, 0.0)).xyz;
+
+  out.clipPos = U.mvp * worldPos;
+  out.posOS   = worldPos.xyz;                // world-space position now
+  out.nOS     = normalize(worldNrm);         // world-space normal
   out.kdCol   = col.rgb;
   return out;
 }
+
 
 @fragment
 fn main_fs(@location(0) posOS: vec3<f32>,
