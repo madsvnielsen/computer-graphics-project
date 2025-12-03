@@ -12,15 +12,13 @@
 // OBJParser
 //------------------------------------------------------------------------------
 
-async function readOBJFile(fileName, scale, reverse)
-{
+async function readOBJFile(fileName, scale, reverse) {
   const response = await fetch(fileName);
-  if(response.ok)
-  {
+  if (response.ok) {
     var objDoc = new OBJDoc(fileName); // Create an OBJDoc object
     let fileText = await response.text();
     let result = await objDoc.parse(fileText, scale, reverse);
-    if(!result) {
+    if (!result) {
       console.log("OBJ file parsing error.");
       return null;
     }
@@ -38,6 +36,8 @@ var OBJDoc = function (fileName) {
   this.objects = new Array(0);   // Initialize the property for Object
   this.vertices = new Array(0);  // Initialize the property for Vertex
   this.normals = new Array(0);   // Initialize the property for Normal
+  this.uvs = new Array(0);       // NEW: Store all vt
+
 }
 
 // Parsing the OBJ file
@@ -66,7 +66,7 @@ OBJDoc.prototype.parse = async function (fileString, scale, reverse) {
         var mtl = new MTLDoc();   // Create MTL instance
         this.mtls.push(mtl);
         const response = await fetch(path);
-        if(response.ok) {
+        if (response.ok) {
           onReadMTLFile(await response.text(), mtl);
         }
         else {
@@ -96,10 +96,18 @@ OBJDoc.prototype.parse = async function (fileString, scale, reverse) {
       case 'usemtl': // Read Material name
         currentMaterialName = this.parseUsemtl(sp);
         continue; // Go to the next line
+
+      case 'vt':   // NEW: Read UV
+        var uv = this.parseUV(sp);
+        this.uvs.push(uv);
+        continue;
       case 'f': // Read face
         var face = this.parseFace(sp, currentMaterialName, this.vertices, reverse);
         currentObject.addFace(face);
         continue; // Go to the next line
+
+
+
     }
   }
 
@@ -138,6 +146,13 @@ OBJDoc.prototype.parseUsemtl = function (sp) {
   return sp.getWord();
 }
 
+OBJDoc.prototype.parseUV = function (sp) {
+  var u = sp.getFloat();
+  var v = sp.getFloat();
+  return { x: u, y: v };
+};
+
+
 OBJDoc.prototype.parseFace = function (sp, materialName, vertices, reverse) {
   var face = new Face(materialName);
   // get indices
@@ -149,6 +164,12 @@ OBJDoc.prototype.parseFace = function (sp, materialName, vertices, reverse) {
       var vi = parseInt(subWords[0]) - 1;
       if (!isNaN(vi))
         face.vIndices.push(vi);
+    }
+    if (subWords.length >= 2) {
+      var ti = parseInt(subWords[1]) - 1;
+      face.tIndices.push(ti);
+    } else {
+      face.tIndices.push(-1);
     }
     if (subWords.length >= 3) {
       var ni = parseInt(subWords[2]) - 1;
@@ -282,6 +303,7 @@ OBJDoc.prototype.getDrawingInfo = function () {
   var normals = new Float32Array(numVertices * 4);
   var colors = new Float32Array(numVertices * 4);
   var indices = new Uint32Array(numIndices);
+  var uvIndices = new Array(numIndices);
 
   // Set vertex, normal and color
   var index_indices = 0;
@@ -292,6 +314,10 @@ OBJDoc.prototype.getDrawingInfo = function () {
       var color = this.findColor(face.materialName);
       var faceNormal = face.normal;
       for (var k = 0; k < face.vIndices.length; k++) {
+
+        var tIdx = face.tIndices[k];
+        uvIndices[index_indices] = tIdx;
+
         // Set index
         var vIdx = face.vIndices[k];
         indices[index_indices] = vIdx;
@@ -325,7 +351,7 @@ OBJDoc.prototype.getDrawingInfo = function () {
     }
   }
 
-  return new DrawingInfo(vertices, normals, colors, indices);
+  return new DrawingInfo(vertices, normals, colors, indices, this.uvs, uvIndices);
 }
 
 //------------------------------------------------------------------------------
@@ -405,16 +431,19 @@ var Face = function (materialName) {
   if (materialName == null) this.materialName = "";
   this.vIndices = new Array(0);
   this.nIndices = new Array(0);
+  this.tIndices = new Array(0); // NEW
 }
 
 //------------------------------------------------------------------------------
 // DrawInfo Object
 //------------------------------------------------------------------------------
-var DrawingInfo = function (vertices, normals, colors, indices) {
+var DrawingInfo = function (vertices, normals, colors, indices, uvs, uvIndices) {
   this.vertices = vertices;
   this.normals = normals;
   this.colors = colors;
   this.indices = indices;
+  this.uvs = uvs;            // NEW
+  this.uvIndices = uvIndices; // NEW
 }
 
 //------------------------------------------------------------------------------
