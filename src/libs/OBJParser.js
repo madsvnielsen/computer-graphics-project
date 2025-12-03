@@ -220,18 +220,32 @@ OBJDoc.prototype.parseFace = function (sp, materialName, vertices, reverse) {
     var n = face.vIndices.length - 2;
     var newVIndices = new Array(n * 3);
     var newNIndices = new Array(n * 3);
+    var newTIndices = new Array(n * 3); // NEW
+
     for (var i = 0; i < n; i++) {
-      newVIndices[i * 3 + 0] = face.vIndices[0];
-      newVIndices[i * 3 + 1] = face.vIndices[i + 1];
-      newVIndices[i * 3 + 2] = face.vIndices[i + 2];
-      newNIndices[i * 3 + 0] = face.nIndices[0];
-      newNIndices[i * 3 + 1] = face.nIndices[i + 1];
-      newNIndices[i * 3 + 2] = face.nIndices[i + 2];
+      var a = 0;
+      var b = i + 1;
+      var c = i + 2;
+
+      newVIndices[i * 3 + 0] = face.vIndices[a];
+      newVIndices[i * 3 + 1] = face.vIndices[b];
+      newVIndices[i * 3 + 2] = face.vIndices[c];
+
+      newNIndices[i * 3 + 0] = face.nIndices[a];
+      newNIndices[i * 3 + 1] = face.nIndices[b];
+      newNIndices[i * 3 + 2] = face.nIndices[c];
+
+      newTIndices[i * 3 + 0] = face.tIndices[a];
+      newTIndices[i * 3 + 1] = face.tIndices[b];
+      newTIndices[i * 3 + 2] = face.tIndices[c];
     }
+
     face.vIndices = newVIndices;
     face.nIndices = newNIndices;
+    face.tIndices = newTIndices; // NEW
   }
   face.numIndices = face.vIndices.length;
+
 
   return face;
 }
@@ -292,67 +306,82 @@ OBJDoc.prototype.findColor = function (name) {
 //------------------------------------------------------------------------------
 // Retrieve the information for drawing 3D model
 OBJDoc.prototype.getDrawingInfo = function () {
-  // Create an arrays for vertex coordinates, normals, colors, and indices
-  var numVertices = 0;
+  // Count total indices (triangles already)
   var numIndices = 0;
   for (var i = 0; i < this.objects.length; i++) {
     numIndices += this.objects[i].numIndices;
   }
-  var numVertices = this.vertices.length;
-  var vertices = new Float32Array(numVertices * 4);
-  var normals = new Float32Array(numVertices * 4);
-  var colors = new Float32Array(numVertices * 4);
-  var indices = new Uint32Array(numIndices);
-  var uvIndices = new Array(numIndices);
 
-  // Set vertex, normal and color
+  // We make one vertex per index → no sharing (simplest & matches OBJ v/vt/vn)
+  var vertices = new Float32Array(numIndices * 4);
+  var normals  = new Float32Array(numIndices * 4);
+  var colors   = new Float32Array(numIndices * 4);
+  var uvs      = new Float32Array(numIndices * 2);
+  var indices  = new Uint32Array(numIndices);
+
   var index_indices = 0;
+
   for (var i = 0; i < this.objects.length; i++) {
     var object = this.objects[i];
+
     for (var j = 0; j < object.faces.length; j++) {
       var face = object.faces[j];
       var color = this.findColor(face.materialName);
       var faceNormal = face.normal;
+
       for (var k = 0; k < face.vIndices.length; k++) {
-
-        var tIdx = face.tIndices[k];
-        uvIndices[index_indices] = tIdx;
-
-        // Set index
         var vIdx = face.vIndices[k];
-        indices[index_indices] = vIdx;
-        // Copy vertex
-        var vertex = this.vertices[vIdx];
-        vertices[vIdx * 4 + 0] = vertex.x;
-        vertices[vIdx * 4 + 1] = vertex.y;
-        vertices[vIdx * 4 + 2] = vertex.z;
-        vertices[vIdx * 4 + 3] = 1.0;
-        // Copy color
-        colors[vIdx * 4 + 0] = color.r;
-        colors[vIdx * 4 + 1] = color.g;
-        colors[vIdx * 4 + 2] = color.b;
-        colors[vIdx * 4 + 3] = color.a;
-        // Copy normal
         var nIdx = face.nIndices[k];
+        var tIdx = face.tIndices[k];
+
+        // index buffer is just 0..numIndices-1
+        indices[index_indices] = index_indices;
+
+        // Position
+        var v = this.vertices[vIdx];
+        vertices[index_indices * 4 + 0] = v.x;
+        vertices[index_indices * 4 + 1] = v.y;
+        vertices[index_indices * 4 + 2] = v.z;
+        vertices[index_indices * 4 + 3] = 1.0;
+
+        // Normal
         if (nIdx >= 0) {
-          var normal = this.normals[nIdx];
-          normals[vIdx * 4 + 0] = normal.x;
-          normals[vIdx * 4 + 1] = normal.y;
-          normals[vIdx * 4 + 2] = normal.z;
-          normals[vIdx * 4 + 3] = 0.0;
+          var n = this.normals[nIdx];
+          normals[index_indices * 4 + 0] = n.x;
+          normals[index_indices * 4 + 1] = n.y;
+          normals[index_indices * 4 + 2] = n.z;
         } else {
-          normals[vIdx * 4 + 0] = faceNormal.x;
-          normals[vIdx * 4 + 1] = faceNormal.y;
-          normals[vIdx * 4 + 2] = faceNormal.z;
-          normals[vIdx * 4 + 3] = 0.0;
+          normals[index_indices * 4 + 0] = faceNormal.x;
+          normals[index_indices * 4 + 1] = faceNormal.y;
+          normals[index_indices * 4 + 2] = faceNormal.z;
         }
+        normals[index_indices * 4 + 3] = 0.0;
+
+        // Color
+        colors[index_indices * 4 + 0] = color.r;
+        colors[index_indices * 4 + 1] = color.g;
+        colors[index_indices * 4 + 2] = color.b;
+        colors[index_indices * 4 + 3] = color.a;
+
+        // UVs
+        if (tIdx >= 0) {
+          var uv = this.uvs[tIdx];
+          uvs[index_indices * 2 + 0] = uv.x;
+          // flip V if needed; start with this and see if it matches your DCC tool
+          uvs[index_indices * 2 + 1] = 1.0 - uv.y;
+        } else {
+          uvs[index_indices * 2 + 0] = 0.0;
+          uvs[index_indices * 2 + 1] = 0.0;
+        }
+
         index_indices++;
       }
     }
   }
 
-  return new DrawingInfo(vertices, normals, colors, indices, this.uvs, uvIndices);
-}
+  return new DrawingInfo(vertices, normals, colors, indices, uvs);
+};
+
 
 //------------------------------------------------------------------------------
 // MTLDoc Object
@@ -437,14 +466,14 @@ var Face = function (materialName) {
 //------------------------------------------------------------------------------
 // DrawInfo Object
 //------------------------------------------------------------------------------
-var DrawingInfo = function (vertices, normals, colors, indices, uvs, uvIndices) {
+var DrawingInfo = function (vertices, normals, colors, indices, uvs) {
   this.vertices = vertices;
   this.normals = normals;
   this.colors = colors;
   this.indices = indices;
-  this.uvs = uvs;            // NEW
-  this.uvIndices = uvIndices; // NEW
+  this.uvs = uvs; // uv per vertex/index
 }
+
 
 //------------------------------------------------------------------------------
 // Constructor

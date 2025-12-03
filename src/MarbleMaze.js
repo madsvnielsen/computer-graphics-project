@@ -65,15 +65,18 @@ export async function runMarbleMaze({ canvas, ui }) {
 
   // --- Load textures (Polyhaven ball) ---
   // NOTE: change file names/paths to match your actual files
-  const texColor = await loadTexture(device, "../textures/brown-wood.jpg");
+  const texColor = await loadTexture(device, "../textures/oak_veneer_01_diff_4k.jpg");
   //const texNormal = await loadTexture(device, "../textures/ball_nor_gl_4k.png");
   // Prefer PNG/JPG instead of EXR for the browser:
   //const texRough = await loadTexture(device, "../textures/ball_rough_4k.png");
 
   const sampler = device.createSampler({
-    magFilter: "linear",
-    minFilter: "linear",
-  });
+    magFilter: 'linear',
+    minFilter: 'linear',
+    mipmapFilter: 'linear',
+    addressModeU: 'repeat',
+    addressModeV: 'repeat',
+});
 
   // --- Bind group (must match WGSL bindings) ---
   const boardBindGroup = device.createBindGroup({
@@ -314,16 +317,40 @@ function initPhysics(Ammo, boardMesh) {
   const tmpTransform = new Ammo.btTransform();
   const tmpBallQuat  = new Ammo.btQuaternion();
 
+  // --- NEW: reset helper + threshold ---
+  const resetThresholdY = -10; // if ball falls below this, reset
+
+  function resetBall() {
+    // reset tilt + gravity
+    floorPitch = 0.0;
+    floorRoll  = 0.0;
+    dynamicsWorld.setGravity(new Ammo.btVector3(0, -9.81, 0));
+
+    // reset ball transform
+    tmpTransform.setIdentity();
+    tmpTransform.setOrigin(new Ammo.btVector3(0, startHeight, 0));
+    ballBody.setWorldTransform(tmpTransform);
+    ballBody.getMotionState().setWorldTransform(tmpTransform);
+
+    // reset velocities and forces
+    ballBody.setLinearVelocity(new Ammo.btVector3(0, 0, 0));
+    ballBody.setAngularVelocity(new Ammo.btVector3(0, 0, 0));
+    ballBody.clearForces();
+
+    // keep it active
+    ballBody.setActivationState(4);
+  }
+
   return {
     // dt is 1/60 from your frame loop
     step(dt) {
       // --- integrate tilt from input ---
-      const tiltSpeed = 0.2; // rad/s ≈ 57°/s, tweak to taste
+      const tiltSpeed = 0.4; 
 
       floorPitch += inputForward * tiltSpeed * dt;
       floorRoll  += inputRight   * tiltSpeed * dt;
 
-      // optional: clamp max tilt so it doesn’t go crazy
+      // clamp max tilt so it doesn’t go crazy
       const maxTilt = 25 * Math.PI / 180; // 25 degrees
       if (floorPitch >  maxTilt) floorPitch =  maxTilt;
       if (floorPitch < -maxTilt) floorPitch = -maxTilt;
@@ -343,6 +370,13 @@ function initPhysics(Ammo, boardMesh) {
 
       dynamicsWorld.setGravity(new Ammo.btVector3(gx, gy, gz));
       dynamicsWorld.stepSimulation(dt, 10);
+
+      // --- NEW: check if ball fell off and reset ---
+      ballBody.getMotionState().getWorldTransform(tmpTransform);
+      const origin = tmpTransform.getOrigin();
+      if (origin.y() < resetThresholdY) {
+        resetBall();
+      }
     },
 
     getBallPosition() {
@@ -370,13 +404,15 @@ function initPhysics(Ammo, boardMesh) {
       };
     },
 
-    // NEW: continuous input instead of discrete angle jumps
     setTiltInput(forward, right) {
-      inputForward = forward; // -1..1
-      inputRight   = right;   // -1..1
+      inputForward = forward;
+      inputRight   = right;  
     },
+
+    resetBall,
   };
 }
+
 
 
 // ----------------------

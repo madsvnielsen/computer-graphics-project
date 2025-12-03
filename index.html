@@ -2,27 +2,91 @@
 <html>
 
 <head>
-    <title>My Page</title>
+    <title>Magnus & Mads' Marble Mania</title>
     <script type="text/javascript" src="./src/libs/OBJParser.js"></script>
     <script type="text/javascript" src="./src/libs/MV.js"></script>
     <script type="module" src="app.js"></script>
     <script id="wgsl" type="x-shader" src="./shaders/main.wgsl"></script>
     <script type="text/javascript" src="./src/libs/ammo.js"></script>
+
+    <style>
+        body {
+            background-color: #20202a;
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            color: white;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #layout {
+            display: flex;
+            gap: 40px;
+            align-items: center;
+        }
+
+        #my-canvas {
+            width: 800px;
+            height: 800px;
+            display: block;
+            border-radius: 8px;
+        }
+
+        #right-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 20px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        #instructions {
+            font-size: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #arrow-img {
+            width: 150px;
+            opacity: 0.9;
+        }
+    </style>
 </head>
 
 <body>
-    <canvas id="my-canvas" width="800" height="800">
-        Please use a browser that supports HTML5 canvas.
-    </canvas>
-    </div>
-</body>
 
-<style>
-    #my-canvas {
-        width: 800px;
-        height: 800px;
-        display: block;
-    }
-</style>
+    <div id="layout">
+
+        <!-- LEFT: CANVAS -->
+        <canvas id="my-canvas" width="800" height="800">
+            Please use a browser that supports HTML5 canvas.
+        </canvas>
+
+        <!-- RIGHT: TITLE + INSTRUCTIONS -->
+        <div id="right-panel">
+            <h1>Magnus & Mads' Marble Mania</h1>
+
+            <div id="instructions">
+                <div>Use the arrow keys to tilt the maze!</div>
+                <img id="arrow-img"
+                    src="https://images.vexels.com/media/users/3/153199/isolated/preview/c0facb164c02a5815d7efea4eb898a98-keyboard-arrow-keys-stroke-icon.png"
+                    alt="arrow keys">
+            </div>
+        </div>
+
+    </div>
+
+</body>
 
 </html>
