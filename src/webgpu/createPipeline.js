@@ -9,7 +9,7 @@ export function createPipeline(device, canvasFormat, code) {
       buffers: [
         { arrayStride: 4 * 4, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }] },
         { arrayStride: 4 * 4, attributes: [{ shaderLocation: 1, offset: 0, format: "float32x4" }] },
-        { arrayStride: 4 * 2, attributes: [{ shaderLocation: 2, offset: 0, format: "float32x2" }] },
+        { arrayStride: 4 * 4, attributes: [{ shaderLocation: 2, offset: 0, format: "float32x4" }] },
       ],
     },
     fragment: {

@@ -98,13 +98,13 @@ export function createFrameLoop({
 
       pass.setVertexBuffer(0, boardBuffers.vbuf);
       pass.setVertexBuffer(1, boardBuffers.nbuf);
-      pass.setVertexBuffer(2, boardBuffers.cbuf);
+      pass.setVertexBuffer(2, boardBuffers.uvbuf);
       pass.setIndexBuffer(boardBuffers.ibuf, "uint32");
       pass.drawIndexed(boardBuffers.indexCount);
 
       pass.setVertexBuffer(0, sphereBuffers.vbuf);
       pass.setVertexBuffer(1, sphereBuffers.nbuf);
-      pass.setVertexBuffer(2, sphereBuffers.cbuf);
+      pass.setVertexBuffer(2, sphereBuffers.uvbuf);
       pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
       pass.drawIndexed(sphereBuffers.indexCount);
       pass.end();
