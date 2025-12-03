@@ -1,7 +1,7 @@
 export function createCameraController(canvas) {
   let yaw = 0.0;
   let pitch = 0.3;
-  const radius = 15.0;
+  const radius = 25.0;
 
   let isDragging = false;
   let lastX = 0;

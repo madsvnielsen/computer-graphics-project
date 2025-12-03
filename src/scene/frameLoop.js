@@ -11,9 +11,12 @@ export function createFrameLoop({
   ui,
   physics,           // NEW
 }) {
-  const lightPos = [4, 2, 0, 1];
+  const lightPos = [4, 8, 0, 1];
   // UPDATED fallback UBO size (mvp + model + 6 vec4)
   const uboSize = ubo.size ?? (16 * 4 * 2 + 4 * 4 * 6);
+
+  const sphereBuffers = buffers.sphereBuffers; 
+  const boardBuffers = buffers.boardBuffers;
 
   return function start() {
     function frame() {
@@ -92,11 +95,18 @@ export function createFrameLoop({
 
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.setVertexBuffer(0, buffers.vbuf);
-      pass.setVertexBuffer(1, buffers.nbuf);
-      pass.setVertexBuffer(2, buffers.cbuf);
-      pass.setIndexBuffer(buffers.ibuf, "uint32");
-      pass.drawIndexed(buffers.indexCount);
+
+      pass.setVertexBuffer(0, boardBuffers.vbuf);
+      pass.setVertexBuffer(1, boardBuffers.nbuf);
+      pass.setVertexBuffer(2, boardBuffers.cbuf);
+      pass.setIndexBuffer(boardBuffers.ibuf, "uint32");
+      pass.drawIndexed(boardBuffers.indexCount);
+
+      pass.setVertexBuffer(0, sphereBuffers.vbuf);
+      pass.setVertexBuffer(1, sphereBuffers.nbuf);
+      pass.setVertexBuffer(2, sphereBuffers.cbuf);
+      pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
+      pass.drawIndexed(sphereBuffers.indexCount);
       pass.end();
 
       device.queue.submit([encoder.finish()]);

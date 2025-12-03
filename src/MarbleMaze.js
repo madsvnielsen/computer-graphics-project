@@ -41,8 +41,11 @@ export async function runMarbleMaze({ canvas, ui }) {
   }
   ensureDepth();
 
-  const { vbuf, nbuf, cbuf, ibuf, indexCount } =
+  const sphereBuffers =
     await loadModelBuffers(device, "../models/sphere.obj");
+
+  const boardBuffers =
+    await loadModelBuffers(device, "../models/board.obj");
 
   // NEW: include extra mat4 (model)
   const uboSize = 16 * 4 * 2 + 4 * 4 * 6;
@@ -79,7 +82,7 @@ export async function runMarbleMaze({ canvas, ui }) {
     context,
     pipeline,
     bindGroup,
-    buffers: { vbuf, nbuf, cbuf, ibuf, indexCount },
+    buffers: {sphereBuffers, boardBuffers},
     depth,
     ubo,
     camera,
