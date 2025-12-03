@@ -8,10 +8,10 @@ function quatToMat4(x, y, z, w) {
 
   // column-major: mat4( col0, col1, col2, col3 )
   return mat4(
-    vec4(1 - 2 * (yy + zz),     2 * (xy + wz),         2 * (xz - wy),         0),
-    vec4(2 * (xy - wz),         1 - 2 * (xx + zz),     2 * (yz + wx),         0),
-    vec4(2 * (xz + wy),         2 * (yz - wx),         1 - 2 * (xx + yy),     0),
-    vec4(0,                     0,                     0,                     1)
+    vec4(1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0),
+    vec4(2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0),
+    vec4(2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0),
+    vec4(0, 0, 0, 1)
   );
 }
 
@@ -19,7 +19,9 @@ export function createFrameLoop({
   device,
   context,
   pipeline,
+  shadowPipeline,
   bindGroups,
+  shadowBindGroup,
   buffers,
   depth,
   ubos,
@@ -30,13 +32,14 @@ export function createFrameLoop({
   const lightPos = [0, 25, 8, 0];
 
   const sphereBuffers = buffers.sphereBuffers;
-  const boardBuffers  = buffers.boardBuffers;
+  const boardBuffers = buffers.boardBuffers;
 
-  const boardBindGroup  = bindGroups.boardBindGroup  ?? bindGroups.board;
+  const boardBindGroup = bindGroups.boardBindGroup ?? bindGroups.board;
   const sphereBindGroup = bindGroups.sphereBindGroup ?? bindGroups.sphere;
 
-  const boardUbo  = ubos.boardUbo  ?? ubos.board;
+  const boardUbo = ubos.boardUbo ?? ubos.board;
   const sphereUbo = ubos.sphereUbo ?? ubos.sphere;
+  const shadowUbo = ubos.shadowUbo ?? ubos.shadow;
 
   function makeUniformData(MVP, modelMat, eye, lightPos) {
     const kdScale   = 5.8;
@@ -71,16 +74,16 @@ export function createFrameLoop({
       const [qx, qy, qz, qw] = ball.rotation;
 
       const floor = physics.getFloorPositionAndRotation();
-      const fpos  = floor.position; // [fx, fy, fz]
+      const fpos = floor.position; // [fx, fy, fz]
       const pitch = floor.pitch;    // radians (X)
-      const roll  = floor.roll;     // radians (Z)
+      const roll = floor.roll;     // radians (Z)
 
       const fx = fpos[0];
       const fy = fpos[1];
       const fz = fpos[2];
 
       const pitchDegTilt = pitch * 180 / Math.PI;
-      const rollDegTilt  = roll  * 180 / Math.PI;
+      const rollDegTilt = roll * 180 / Math.PI;
 
       // --- CAMERA / PROJ / VIEW ---
       const canvas = context.canvas;
@@ -117,12 +120,12 @@ export function createFrameLoop({
       const RcamTotal = mult(RtiltCam, RcamBase);
 
       const eye4 = mult(RcamTotal, baseEye);
-      const eye  = [eye4[0], eye4[1], eye4[2], 0.0];
+      const eye = [eye4[0], eye4[1], eye4[2], 0.0];
 
       // Up vector: world up rotated by tilt
       const upWorld4 = vec4(0, 1, 0, 0);
-      const up4      = mult(RtiltCam, upWorld4);
-      const up       = vec3(up4[0], up4[1], up4[2]);
+      const up4 = mult(RtiltCam, upWorld4);
+      const up = vec3(up4[0], up4[1], up4[2]);
 
       const view = lookAt(
         vec3(eye[0], eye[1], eye[2]),
@@ -137,7 +140,7 @@ export function createFrameLoop({
       const boardModel = translate(fx, fy, fz);
 
       // Ball: translate + rotation from physics quaternion
-      const Rball       = quatToMat4(qx, qy, qz, qw);
+      const Rball = quatToMat4(qx, qy, qz, qw);
       const sphereModel = mult(translate(bx, by, bz), Rball);
 
       // --- DRAW ---
@@ -157,6 +160,7 @@ export function createFrameLoop({
         },
       });
 
+      // --- NORMAL GEOMETRY PASS (board + sphere) – EXACTLY your old code ---
       pass.setPipeline(pipeline);
 
       // Board
@@ -179,6 +183,38 @@ export function createFrameLoop({
       pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
       pass.drawIndexed(sphereBuffers.indexCount);
 
+      // --- SHADOW PASS ---
+      {
+        const planeNormal = [0, 1, 0];
+        const boardHeightOffset = fy + 0.01; // match collider top
+        const planeD = boardHeightOffset;
+
+        const light = [lightPos[0], lightPos[1], lightPos[2]];
+
+        const Ms = shadowMatrix(planeNormal, planeD, light);
+
+        // push shadow downward
+        const dropShadow = translate(0, -2.3, 0); // tweak this value (start around 0.4)
+        const MsFix = mult(dropShadow, Ms);
+
+        const shadowMVP = mult(proj, mult(view, MsFix));
+
+        const shadowData = new Float32Array(uboSize / 4);
+        shadowData.set(flatten(shadowMVP), 0);
+        shadowData.set(flatten(sphereModel), 16);
+
+        device.queue.writeBuffer(shadowUbo, 0, shadowData.buffer);
+
+        pass.setPipeline(shadowPipeline);
+        pass.setBindGroup(0, shadowBindGroup);
+
+        pass.setVertexBuffer(0, sphereBuffers.vbuf);
+        pass.setVertexBuffer(1, sphereBuffers.nbuf);
+        pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
+        pass.drawIndexed(sphereBuffers.indexCount);
+      }
+
+
       pass.end();
       device.queue.submit([encoder.finish()]);
 
@@ -187,4 +223,17 @@ export function createFrameLoop({
 
     requestAnimationFrame(frame);
   };
+}
+
+function shadowMatrix(planeNormal, planeD, lightPos) {
+  const [nx, ny, nz] = planeNormal;
+  const [lx, ly, lz] = lightPos;
+
+  const dot = nx * lx + ny * ly + nz * lz + planeD;
+  const m = mat4();
+  m[0][0] = dot - lx * nx; m[0][1] = -lx * ny; m[0][2] = -lx * nz; m[0][3] = -lx * planeD;
+  m[1][0] = -ly * nx; m[1][1] = dot - ly * ny; m[1][2] = -ly * nz; m[1][3] = -ly * planeD;
+  m[2][0] = -lz * nx; m[2][1] = -lz * ny; m[2][2] = dot - lz * nz; m[2][3] = -lz * planeD;
+  m[3][0] = -nx; m[3][1] = -ny; m[3][2] = -nz; m[3][3] = dot - planeD;
+  return m;
 }

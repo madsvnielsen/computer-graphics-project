@@ -18,8 +18,7 @@ export async function runMarbleMaze({ canvas, ui }) {
     ? await fetch(wgslScript.src, { cache: "reload" }).then((r) => r.text())
     : `/* inline WGSL */`;
 
-  const pipeline = createPipeline(device, canvasFormat, code);
-
+  const { pipeline, shadowPipeline, bindGroupLayout } = createPipeline(device, canvasFormat, code);
   // --- Depth buffer ---
   const depth = { texture: null, view: null, width: 0, height: 0 };
 
@@ -57,6 +56,13 @@ export async function runMarbleMaze({ canvas, ui }) {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  // 🔹 NEW: separate UBO for shadow pass
+  const shadowUbo = device.createBuffer({
+    size: uboSize,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+
   // --- Load textures (Polyhaven ball) ---
   // NOTE: change file names/paths to match your actual files
   const texColor = await loadTexture(device, "../textures/brown-wood.jpg");
@@ -69,7 +75,6 @@ export async function runMarbleMaze({ canvas, ui }) {
     minFilter: "linear",
   });
 
-  // --- Bind group (must match WGSL bindings) ---
   // --- Bind group (must match WGSL bindings) ---
   const boardBindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
@@ -88,6 +93,16 @@ export async function runMarbleMaze({ canvas, ui }) {
       { binding: 2, resource: sampler }, // mySampler
     ],
   });
+
+  // 🔹 NEW: shadow bind group (same layout, different UBO)
+const shadowBindGroup = device.createBindGroup({
+  layout: bindGroupLayout,
+  entries: [
+    { binding: 0, resource: { buffer: shadowUbo } },
+    { binding: 1, resource: texColor }, // not used by shadow_fs, but required by layout
+    { binding: 2, resource: sampler },
+  ],
+});
 
 
   // --- Resize handling ---
@@ -164,12 +179,16 @@ window.addEventListener("keyup", (e) => {
     pipeline,
     bindGroups: { boardBindGroup, sphereBindGroup },
     buffers: { sphereBuffers, boardBuffers },
+    shadowPipeline,        // ✔
+    shadowBindGroup,       // ✔
     depth,
-    ubos: { boardUbo, sphereUbo },
+    ubos: { boardUbo, sphereUbo, shadowUbo },
     uboSize,
     ui,
     physics,
   });
+
+  
 
   startFrameLoop();
 }
