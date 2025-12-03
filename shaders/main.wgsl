@@ -50,7 +50,6 @@ fn main_fs(
   @location(2) uv   : vec2<f32>
 ) -> @location(0) vec4<f32> {
 
-  // Sample base color only (no normal/rough maps yet)
   let baseColor = textureSample(myColorTex, mySampler, uv).rgb;
 
   let n = normalize(nWS);

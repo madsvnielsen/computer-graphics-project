@@ -1,18 +1,47 @@
 import { Constants } from "../config/Constants.js";
 
-// helper: quaternion -> mat4 (column-major, MV.js-style mat4)
 function quatToMat4(x, y, z, w) {
-  const xx = x * x, yy = y * y, zz = z * z;
-  const xy = x * y, xz = x * z, yz = y * z;
-  const wx = w * x, wy = w * y, wz = w * z;
+  const xx = x * x,
+    yy = y * y,
+    zz = z * z;
+  const xy = x * y,
+    xz = x * z,
+    yz = y * z;
+  const wx = w * x,
+    wy = w * y,
+    wz = w * z;
 
-  // column-major: mat4( col0, col1, col2, col3 )
   return mat4(
     vec4(1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0),
     vec4(2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0),
     vec4(2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0),
     vec4(0, 0, 0, 1)
   );
+}
+
+function shadowMatrix(planeNormal, planeD, lightPos) {
+  const [nx, ny, nz] = planeNormal;
+  const [lx, ly, lz] = lightPos;
+
+  const dot = nx * lx + ny * ly + nz * lz + planeD;
+  const m = mat4();
+  m[0][0] = dot - lx * nx;
+  m[0][1] = -lx * ny;
+  m[0][2] = -lx * nz;
+  m[0][3] = -lx * planeD;
+  m[1][0] = -ly * nx;
+  m[1][1] = dot - ly * ny;
+  m[1][2] = -ly * nz;
+  m[1][3] = -ly * planeD;
+  m[2][0] = -lz * nx;
+  m[2][1] = -lz * ny;
+  m[2][2] = dot - lz * nz;
+  m[2][3] = -lz * planeD;
+  m[3][0] = -nx;
+  m[3][1] = -ny;
+  m[3][2] = -nz;
+  m[3][3] = dot - planeD;
+  return m;
 }
 
 export function createFrameLoop({
@@ -51,41 +80,51 @@ export function createFrameLoop({
     const data = new Float32Array(uboSize / 4);
     let o = 0;
 
-    data.set(flatten(MVP), o); o += 16;              // mvp
-    data.set(flatten(modelMat), o); o += 16;         // model
-    data.set(eye, o); o += 4;                        // eye
-    data.set(lightPos, o); o += 4;                   // light
-    data.set([1, 1, 1, 0], o); o += 4;               // kd_u
-    data.set([1, 1, 1, 0], o); o += 4;               // ks
-    data.set([kdScale, ksScale, shininess, Le], o); o += 4; // scales
-    data.set([La, La, La, 0], o); o += 4;            // ambient
+    data.set(flatten(MVP), o);
+    o += 16;
+    data.set(flatten(modelMat), o);
+    o += 16;
+    data.set(eye, o);
+    o += 4;
+    data.set(lightPos, o);
+    o += 4;
+    data.set([1, 1, 1, 0], o);
+    o += 4;
+    data.set([1, 1, 1, 0], o);
+    o += 4;
+    data.set([kdScale, ksScale, shininess, Le], o);
+    o += 4;
+    data.set([La, La, La, 0], o);
+    o += 4;
 
     return data;
   }
 
   return function start() {
-    function frame() {
-      // --- PHYSICS ---
-      physics.step(1 / 60);
+    let lastTime = performance.now();
 
-      // full transform (pos + quat) for the ball
+    function frame(currentTime) {
+      const deltaTime = (currentTime - lastTime) / 1000;
+      lastTime = currentTime;
+
+      physics.step(Math.min(deltaTime * 4.0, 1 / 30));
+
       const ball = physics.getBallTransform();
       const [bx, by, bz] = ball.position;
       const [qx, qy, qz, qw] = ball.rotation;
 
       const floor = physics.getFloorPositionAndRotation();
-      const fpos = floor.position; // [fx, fy, fz]
-      const pitch = floor.pitch;    // radians (X)
-      const roll = floor.roll;     // radians (Z)
+      const fpos = floor.position;
+      const pitch = floor.pitch;
+      const roll = floor.roll;
 
       const fx = fpos[0];
       const fy = fpos[1];
       const fz = fpos[2];
 
-      const pitchDegTilt = pitch * 180 / Math.PI;
-      const rollDegTilt = roll * 180 / Math.PI;
+      const pitchDegTilt = (pitch * 180) / Math.PI;
+      const rollDegTilt = (roll * 180) / Math.PI;
 
-      // --- CAMERA / PROJ / VIEW ---
       const canvas = context.canvas;
       const dpr = window.devicePixelRatio || 1;
       const aspect = (canvas.clientWidth * dpr) / (canvas.clientHeight * dpr);
@@ -99,78 +138,58 @@ export function createFrameLoop({
       );
       const proj = mult(Z01, projGL);
 
-      // Fixed base camera: orbiting a bit above and to the side
       const baseRadius = 45.0;
-      const baseYawDeg = 0.0;   // around Y
-      const basePitchDeg = 45.0;   // look down
+      const baseYawDeg = 0.0;
+      const basePitchDeg = 45.0;
 
       const baseEye = vec4(0.0, 0.0, baseRadius, 1.0);
 
-      const RcamBase = mult(
-        rotateX(basePitchDeg),
-        rotateY(baseYawDeg)
-      );
+      const RcamBase = mult(rotateX(basePitchDeg), rotateY(baseYawDeg));
 
-      // Rotate camera opposite to tilt
-      const RtiltCam = mult(
-        rotateZ(-rollDegTilt),
-        rotateX(-pitchDegTilt)
-      );
+      const RtiltCam = mult(rotateZ(-rollDegTilt), rotateX(-pitchDegTilt));
 
       const RcamTotal = mult(RtiltCam, RcamBase);
 
       const eye4 = mult(RcamTotal, baseEye);
       const eye = [eye4[0], eye4[1], eye4[2], 0.0];
 
-      // Up vector: world up rotated by tilt
       const upWorld4 = vec4(0, 1, 0, 0);
       const up4 = mult(RtiltCam, upWorld4);
       const up = vec3(up4[0], up4[1], up4[2]);
 
-      const view = lookAt(
-        vec3(eye[0], eye[1], eye[2]),
-        vec3(0, 0, 0),
-        up
-      );
+      const view = lookAt(vec3(eye[0], eye[1], eye[2]), vec3(0, 0, 0), up);
 
       const MVP = mult(proj, view);
 
-      // --- MODEL MATRICES ---
-      // Board: no rotation, just translate to floorPos
       const boardModel = translate(fx, fy, fz);
 
-      // Ball: translate + rotation from physics quaternion
       const Rball = quatToMat4(qx, qy, qz, qw);
       const sphereModel = mult(translate(bx, by, bz), Rball);
 
-      // --- DRAW ---
       const encoder = device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: context.getCurrentTexture().createView(),
-          loadOp: "clear",
-          storeOp: "store",
-          clearValue: Constants.ClearColor,
-        }],
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            loadOp: "clear",
+            storeOp: "store",
+            clearValue: Constants.ClearColor,
+          },
+        ],
         depthStencilAttachment: {
           view: depth.view,
           depthClearValue: 1.0,
           depthLoadOp: "clear",
           depthStoreOp: "store",
-
-          // NEW: required for stencil formats
-          stencilClearValue: 0,     // clear stencil to 0
+          stencilClearValue: 0,
           stencilLoadOp: "clear",
           stencilStoreOp: "store",
         },
-
       });
 
-      // --- NORMAL GEOMETRY PASS (board + sphere) – EXACTLY your old code ---
       pass.setPipeline(pipeline);
 
-      // Board
-      pass.setStencilReference(1); // Shadows only land where board is drawn
+      pass.setStencilReference(1);
       const boardData = makeUniformData(MVP, boardModel, eye, lightPos);
       device.queue.writeBuffer(boardUbo, 0, boardData.buffer);
       pass.setBindGroup(0, boardBindGroup);
@@ -180,9 +199,7 @@ export function createFrameLoop({
       pass.setIndexBuffer(boardBuffers.ibuf, "uint32");
       pass.drawIndexed(boardBuffers.indexCount);
 
-
-      // Sphere
-      pass.setStencilReference(0); // sphere should not mark stencil
+      pass.setStencilReference(0);
       const sphereData = makeUniformData(MVP, sphereModel, eye, lightPos);
       device.queue.writeBuffer(sphereUbo, 0, sphereData.buffer);
       pass.setBindGroup(0, sphereBindGroup);
@@ -192,19 +209,16 @@ export function createFrameLoop({
       pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
       pass.drawIndexed(sphereBuffers.indexCount);
 
-      // --- SHADOW PASS ---
       {
-        // Ball must be above the board to cast a shadow
-        const radius = 1.0; // matches physics sphere radius
+        const radius = 1.0;
         const ballAboveBoard = by > fy + 0.2 * radius;
         if (!ballAboveBoard) {
-          // Skip shadow if ball is below or barely touching the board
-          pass.setStencilReference(0); // reset for safety
+          pass.setStencilReference(0);
         } else {
-          pass.setStencilReference(1);  // only where board wrote 1
+          pass.setStencilReference(1);
 
           const planeNormal = [0, 1, 0];
-          const boardHeightOffset = fy + 0.01; // match collider top
+          const boardHeightOffset = fy + 0.01;
           const planeD = -boardHeightOffset;
 
           const light = [lightPos[0], lightPos[1], lightPos[2]];
@@ -227,27 +241,15 @@ export function createFrameLoop({
         }
       }
 
-
-
       pass.end();
       device.queue.submit([encoder.finish()]);
 
       requestAnimationFrame(frame);
     }
 
-    requestAnimationFrame(frame);
+    requestAnimationFrame((time) => {
+      lastTime = time;
+      requestAnimationFrame(frame);
+    });
   };
-}
-
-function shadowMatrix(planeNormal, planeD, lightPos) {
-  const [nx, ny, nz] = planeNormal;
-  const [lx, ly, lz] = lightPos;
-
-  const dot = nx * lx + ny * ly + nz * lz + planeD;
-  const m = mat4();
-  m[0][0] = dot - lx * nx; m[0][1] = -lx * ny; m[0][2] = -lx * nz; m[0][3] = -lx * planeD;
-  m[1][0] = -ly * nx; m[1][1] = dot - ly * ny; m[1][2] = -ly * nz; m[1][3] = -ly * planeD;
-  m[2][0] = -lz * nx; m[2][1] = -lz * ny; m[2][2] = dot - lz * nz; m[2][3] = -lz * planeD;
-  m[3][0] = -nx; m[3][1] = -ny; m[3][2] = -nz; m[3][3] = dot - planeD;
-  return m;
 }

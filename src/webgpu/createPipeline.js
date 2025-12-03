@@ -1,10 +1,13 @@
 export function createPipeline(device, canvasFormat, code) {
   const module = device.createShaderModule({ code });
 
-  // 🔹 Define the shared bind group layout explicitly (fixes the warning)
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
-      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} },
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: {},
+      },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
     ],
@@ -18,15 +21,23 @@ export function createPipeline(device, canvasFormat, code) {
     module,
     entryPoint: "main_vs",
     buffers: [
-      { arrayStride: 4 * 4, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }] },
-      { arrayStride: 4 * 4, attributes: [{ shaderLocation: 1, offset: 0, format: "float32x4" }] },
-      { arrayStride: 4 * 2, attributes: [{ shaderLocation: 2, offset: 0, format: "float32x2" }] },
+      {
+        arrayStride: 4 * 4,
+        attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }],
+      },
+      {
+        arrayStride: 4 * 4,
+        attributes: [{ shaderLocation: 1, offset: 0, format: "float32x4" }],
+      },
+      {
+        arrayStride: 4 * 2,
+        attributes: [{ shaderLocation: 2, offset: 0, format: "float32x2" }],
+      },
     ],
   };
 
-  // ---- Normal Pipeline ----
   const pipeline = device.createRenderPipeline({
-    layout: pipelineLayout,   // 🔹 use explicit layout
+    layout: pipelineLayout,
     vertex: vertexState,
     fragment: {
       module,
@@ -42,7 +53,6 @@ export function createPipeline(device, canvasFormat, code) {
       format: "depth24plus-stencil8",
       depthWriteEnabled: true,
       depthCompare: "less",
-    
       stencilFront: {
         compare: "always",
         passOp: "replace",
@@ -51,70 +61,72 @@ export function createPipeline(device, canvasFormat, code) {
         compare: "always",
         passOp: "replace",
       },
-      stencilReadMask: 0xFF,
-      stencilWriteMask: 0xFF,
-    }    
+      stencilReadMask: 0xff,
+      stencilWriteMask: 0xff,
+    },
   });
 
-  // Shadow vertex buffer layout: no UVs needed
-const shadowVertexState = {
-  module,
-  entryPoint: "shadow_vs",
-  buffers: [
-    { arrayStride: 4 * 4, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }] },
-    { arrayStride: 4 * 4, attributes: [{ shaderLocation: 1, offset: 0, format: "float32x4" }] },
-  ],
-};
-
-const shadowPipeline = device.createRenderPipeline({
-  layout: pipelineLayout,
-  vertex: shadowVertexState,
-  fragment: {
+  const shadowVertexState = {
     module,
-    entryPoint: "shadow_fs",
-    targets: [
+    entryPoint: "shadow_vs",
+    buffers: [
       {
-        format: canvasFormat,
-        blend: {
-          color: {
-            srcFactor: "src-alpha",
-            dstFactor: "one-minus-src-alpha",
-            operation: "add",
-          },
-          alpha: {
-            srcFactor: "one",
-            dstFactor: "one-minus-src-alpha",
-            operation: "add",
-          },
-        },
-        writeMask: GPUColorWrite.ALL,
+        arrayStride: 4 * 4,
+        attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }],
+      },
+      {
+        arrayStride: 4 * 4,
+        attributes: [{ shaderLocation: 1, offset: 0, format: "float32x4" }],
       },
     ],
-  },
-  primitive: {
-    topology: "triangle-list",
-    cullMode: "back",
-    frontFace: "ccw",
-  },
-  depthStencil: {
-    format: "depth24plus-stencil8",
-    depthWriteEnabled: false,
-    depthCompare: "less", // Only draw on surfaces NOT in front of shadow
-  
-    stencilFront: {
-      compare: "equal", // Only where board wrote stencil = 1
-      passOp: "keep",
-    },
-    stencilBack: {
-      compare: "equal",
-      passOp: "keep",
-    },
-  
-    stencilReadMask: 0xFF,
-    stencilWriteMask: 0x00,
-  },  
-});
+  };
 
-  // Return layout too so runMarbleMaze can build bindGroup correctly
+  const shadowPipeline = device.createRenderPipeline({
+    layout: pipelineLayout,
+    vertex: shadowVertexState,
+    fragment: {
+      module,
+      entryPoint: "shadow_fs",
+      targets: [
+        {
+          format: canvasFormat,
+          blend: {
+            color: {
+              srcFactor: "src-alpha",
+              dstFactor: "one-minus-src-alpha",
+              operation: "add",
+            },
+            alpha: {
+              srcFactor: "one",
+              dstFactor: "one-minus-src-alpha",
+              operation: "add",
+            },
+          },
+          writeMask: GPUColorWrite.ALL,
+        },
+      ],
+    },
+    primitive: {
+      topology: "triangle-list",
+      cullMode: "back",
+      frontFace: "ccw",
+    },
+    depthStencil: {
+      format: "depth24plus-stencil8",
+      depthWriteEnabled: false,
+      depthCompare: "less",
+      stencilFront: {
+        compare: "equal",
+        passOp: "keep",
+      },
+      stencilBack: {
+        compare: "equal",
+        passOp: "keep",
+      },
+      stencilReadMask: 0xff,
+      stencilWriteMask: 0x00,
+    },
+  });
+
   return { pipeline, shadowPipeline, bindGroupLayout };
 }
