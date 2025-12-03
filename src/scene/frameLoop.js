@@ -4,13 +4,13 @@ export function createFrameLoop({
   device,
   context,
   pipeline,
-  shadowPipeline,    // 🔹 new
+  shadowPipeline,
   bindGroup,
-  shadowBindGroup,   // 🔹 new
+  shadowBindGroup,
   buffers,
   depth,
   ubo,
-  shadowUbo,         // 🔹 new
+  shadowUbo,
   camera,
   ui,
   physics,
@@ -20,7 +20,7 @@ export function createFrameLoop({
   const uboSize = ubo.size ?? (16 * 4 * 2 + 4 * 4 * 6);
 
   const sphereBuffers = buffers.sphereBuffers;
-  const boardBuffers  = buffers.boardBuffers;
+  const boardBuffers = buffers.boardBuffers;
 
   return function start() {
     function frame() {
@@ -63,11 +63,11 @@ export function createFrameLoop({
       const model = translate(bx, by, bz);
 
       // UI / material params
-      const kdScale   = 1.8;
-      const ksScale   = 50;
+      const kdScale = 1.8;
+      const ksScale = 50;
       const shininess = 1008;
-      const Le        = 10;
-      const La        = 0.3;
+      const Le = 10;
+      const La = 0.3;
 
       // 🔹 ORIGINAL UBO PACKING – unchanged
       const data = new Float32Array(uboSize / 4);
@@ -122,21 +122,22 @@ export function createFrameLoop({
       pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
       pass.drawIndexed(sphereBuffers.indexCount);
 
-      // --- SHADOW PASS (separate UBO, no effect on main UBO) ---
+      // --- SHADOW PASS ---
       {
-        const planeNormal = [0, 1, 0];    // y-up plane
-        const planeD = 1.01;              // slightly above floor (y=-1)
+        // Project onto board surface (y = 0)
+        const planeNormal = [0, 1, 0];
+        const planeD = 0.02; // just above board top
+
         const light = [lightPos[0], lightPos[1], lightPos[2]];
 
         const Ms = shadowMatrix(planeNormal, planeD, light);
         const shadowMVP = mult(proj, mult(view, Ms));
 
-        // Only need mvp + model for shadow; rest can be zero
+        // write to shadow UBO
         const shadowData = new Float32Array(uboSize / 4);
         let s = 0;
         shadowData.set(flatten(shadowMVP), s); s += 16;
-        shadowData.set(flatten(model), s);    s += 16;
-        // rest left as 0
+        shadowData.set(flatten(model), s); s += 16;
 
         device.queue.writeBuffer(shadowUbo, 0, shadowData.buffer);
 
@@ -145,10 +146,10 @@ export function createFrameLoop({
 
         pass.setVertexBuffer(0, sphereBuffers.vbuf);
         pass.setVertexBuffer(1, sphereBuffers.nbuf);
-        // ❌ no UV buffer for shadow
         pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
         pass.drawIndexed(sphereBuffers.indexCount);
       }
+
 
       pass.end();
 
@@ -169,6 +170,6 @@ function shadowMatrix(planeNormal, planeD, lightPos) {
   m[0][0] = dot - lx * nx; m[0][1] = -lx * ny; m[0][2] = -lx * nz; m[0][3] = -lx * planeD;
   m[1][0] = -ly * nx; m[1][1] = dot - ly * ny; m[1][2] = -ly * nz; m[1][3] = -ly * planeD;
   m[2][0] = -lz * nx; m[2][1] = -lz * ny; m[2][2] = dot - lz * nz; m[2][3] = -lz * planeD;
-  m[3][0] = -nx;      m[3][1] = -ny;      m[3][2] = -nz;      m[3][3] = dot - planeD;
+  m[3][0] = -nx; m[3][1] = -ny; m[3][2] = -nz; m[3][3] = dot - planeD;
   return m;
 }
