@@ -1,22 +1,26 @@
 import { Constants } from "../config/Constants.js";
+
 export function createFrameLoop({
   device,
   context,
   pipeline,
+  shadowPipeline,    // 🔹 new
   bindGroup,
+  shadowBindGroup,   // 🔹 new
   buffers,
   depth,
   ubo,
+  shadowUbo,         // 🔹 new
   camera,
   ui,
-  physics,           // NEW
+  physics,
 }) {
   const lightPos = [4, 8, 0, 1];
-  // UPDATED fallback UBO size (mvp + model + 6 vec4)
+  // mvp + model + 6 vec4
   const uboSize = ubo.size ?? (16 * 4 * 2 + 4 * 4 * 6);
 
-  const sphereBuffers = buffers.sphereBuffers; 
-  const boardBuffers = buffers.boardBuffers;
+  const sphereBuffers = buffers.sphereBuffers;
+  const boardBuffers  = buffers.boardBuffers;
 
   return function start() {
     function frame() {
@@ -48,24 +52,29 @@ export function createFrameLoop({
       const eye4 = mult(R, baseEye);
       const eye = [eye4[0], eye4[1], eye4[2], 0.0];
 
-      const view = lookAt(vec3(eye[0], eye[1], eye[2]), vec3(0, 0, 0), vec3(0, 1, 0));
+      const view = lookAt(
+        vec3(eye[0], eye[1], eye[2]),
+        vec3(0, 0, 0),
+        vec3(0, 1, 0)
+      );
       const MVP = mult(proj, view);
 
-      // NEW: model matrix from physics position (simple translation)
+      // model matrix from physics position (simple translation)
       const model = translate(bx, by, bz);
 
       // UI / material params
-      const kdScale = 1.8;
-      const ksScale = 50;
+      const kdScale   = 1.8;
+      const ksScale   = 50;
       const shininess = 1008;
-      const Le = 10;
-      const La = 0.3;
+      const Le        = 10;
+      const La        = 0.3;
 
+      // 🔹 ORIGINAL UBO PACKING – unchanged
       const data = new Float32Array(uboSize / 4);
       let o = 0;
       // mvp
       data.set(flatten(MVP), o); o += 16;
-      // model (NEW)
+      // model
       data.set(flatten(model), o); o += 16;
       // eye, light, materials etc.
       data.set(eye, o); o += 4;
@@ -75,8 +84,10 @@ export function createFrameLoop({
       data.set([kdScale, ksScale, shininess, Le], o); o += 4;
       data.set([La, La, La, 0], o); o += 4;
 
+      // write main UBO (normal rendering)
       device.queue.writeBuffer(ubo, 0, data.buffer);
 
+      // --- Command encoder & main pass ---
       const encoder = device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
@@ -93,20 +104,52 @@ export function createFrameLoop({
         },
       });
 
+      // --- NORMAL GEOMETRY PASS (board + sphere) – EXACTLY your old code ---
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
 
+      // Board
       pass.setVertexBuffer(0, boardBuffers.vbuf);
       pass.setVertexBuffer(1, boardBuffers.nbuf);
       pass.setVertexBuffer(2, boardBuffers.uvbuf);
       pass.setIndexBuffer(boardBuffers.ibuf, "uint32");
       pass.drawIndexed(boardBuffers.indexCount);
 
+      // Sphere
       pass.setVertexBuffer(0, sphereBuffers.vbuf);
       pass.setVertexBuffer(1, sphereBuffers.nbuf);
       pass.setVertexBuffer(2, sphereBuffers.uvbuf);
       pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
       pass.drawIndexed(sphereBuffers.indexCount);
+
+      // --- SHADOW PASS (separate UBO, no effect on main UBO) ---
+      {
+        const planeNormal = [0, 1, 0];    // y-up plane
+        const planeD = 1.01;              // slightly above floor (y=-1)
+        const light = [lightPos[0], lightPos[1], lightPos[2]];
+
+        const Ms = shadowMatrix(planeNormal, planeD, light);
+        const shadowMVP = mult(proj, mult(view, Ms));
+
+        // Only need mvp + model for shadow; rest can be zero
+        const shadowData = new Float32Array(uboSize / 4);
+        let s = 0;
+        shadowData.set(flatten(shadowMVP), s); s += 16;
+        shadowData.set(flatten(model), s);    s += 16;
+        // rest left as 0
+
+        device.queue.writeBuffer(shadowUbo, 0, shadowData.buffer);
+
+        pass.setPipeline(shadowPipeline);
+        pass.setBindGroup(0, shadowBindGroup);
+
+        pass.setVertexBuffer(0, sphereBuffers.vbuf);
+        pass.setVertexBuffer(1, sphereBuffers.nbuf);
+        // ❌ no UV buffer for shadow
+        pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
+        pass.drawIndexed(sphereBuffers.indexCount);
+      }
+
       pass.end();
 
       device.queue.submit([encoder.finish()]);
@@ -115,4 +158,17 @@ export function createFrameLoop({
 
     requestAnimationFrame(frame);
   };
+}
+
+function shadowMatrix(planeNormal, planeD, lightPos) {
+  const [nx, ny, nz] = planeNormal;
+  const [lx, ly, lz] = lightPos;
+
+  const dot = nx * lx + ny * ly + nz * lz + planeD;
+  const m = mat4();
+  m[0][0] = dot - lx * nx; m[0][1] = -lx * ny; m[0][2] = -lx * nz; m[0][3] = -lx * planeD;
+  m[1][0] = -ly * nx; m[1][1] = dot - ly * ny; m[1][2] = -ly * nz; m[1][3] = -ly * planeD;
+  m[2][0] = -lz * nx; m[2][1] = -lz * ny; m[2][2] = dot - lz * nz; m[2][3] = -lz * planeD;
+  m[3][0] = -nx;      m[3][1] = -ny;      m[3][2] = -nz;      m[3][3] = dot - planeD;
+  return m;
 }

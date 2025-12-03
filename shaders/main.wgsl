@@ -80,5 +80,30 @@ fn main_fs(
 
   return vec4<f32>(finalColor, 1.0);
     //return vec4<f32>(uv, 0.0, 1.0);
+}
 
+// =========================
+// SHADOW PASS SHADERS
+// =========================
+struct ShadowVSOut {
+  @builtin(position) clipPos : vec4<f32>,
+};
+
+@vertex
+fn shadow_vs(
+  @location(0) pos: vec4<f32>,
+  @location(1) nrm: vec4<f32>
+) -> ShadowVSOut {
+  var out: ShadowVSOut;
+
+  let worldPos = U.model * pos;
+  out.clipPos = U.mvp * worldPos;
+
+  return out;
+}
+
+@fragment
+fn shadow_fs() -> @location(0) vec4<f32> {
+  let shadowAlpha = 0.6;
+  return vec4<f32>(0.0, 0.0, 0.0, shadowAlpha);
 }

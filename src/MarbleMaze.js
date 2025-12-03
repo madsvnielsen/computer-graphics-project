@@ -19,8 +19,7 @@ export async function runMarbleMaze({ canvas, ui }) {
     ? await fetch(wgslScript.src, { cache: "reload" }).then(r => r.text())
     : `/* inline WGSL */`;
 
-  const pipeline = createPipeline(device, canvasFormat, code);
-
+  const { pipeline, shadowPipeline, bindGroupLayout } = createPipeline(device, canvasFormat, code);
   // --- Depth buffer ---
   const depth = { texture: null, view: null, width: 0, height: 0 };
 
@@ -48,11 +47,19 @@ export async function runMarbleMaze({ canvas, ui }) {
     await loadModelBuffers(device, "../models/board.obj");
 
   // NEW: include extra mat4 (model)
+  // NEW: include extra mat4 (model)
   const uboSize = 16 * 4 * 2 + 4 * 4 * 6;
   const ubo = device.createBuffer({
     size: uboSize,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+
+  // 🔹 NEW: separate UBO for shadow pass
+  const shadowUbo = device.createBuffer({
+    size: uboSize,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
 
   // --- Load textures (Polyhaven ball) ---
   // NOTE: change file names/paths to match your actual files
@@ -69,13 +76,24 @@ export async function runMarbleMaze({ canvas, ui }) {
   // --- Bind group (must match WGSL bindings) ---
 // --- Bind group (must match WGSL bindings) ---
 const bindGroup = device.createBindGroup({
-  layout: pipeline.getBindGroupLayout(0),
+  layout: bindGroupLayout,  // 🔹 use returned layout here
   entries: [
-    { binding: 0, resource: { buffer: ubo } },  // U
-    { binding: 1, resource: texColor },         // myColorTex
-    { binding: 2, resource: sampler },          // mySampler
+    { binding: 0, resource: { buffer: ubo }},
+    { binding: 1, resource: texColor },
+    { binding: 2, resource: sampler },
   ],
 });
+
+// 🔹 NEW: shadow bind group (same layout, different UBO)
+const shadowBindGroup = device.createBindGroup({
+  layout: bindGroupLayout,
+  entries: [
+    { binding: 0, resource: { buffer: shadowUbo } },
+    { binding: 1, resource: texColor }, // not used by shadow_fs, but required by layout
+    { binding: 2, resource: sampler },
+  ],
+});
+
 
 
   const camera = createCameraController(canvas);
@@ -103,14 +121,19 @@ const bindGroup = device.createBindGroup({
     device,
     context,
     pipeline,
+    shadowPipeline,        // ✔
     bindGroup,
-    buffers: {sphereBuffers, boardBuffers},
+    shadowBindGroup,       // ✔
+    buffers: { sphereBuffers, boardBuffers },
     depth,
     ubo,
+    shadowUbo,             // ✔
     camera,
     ui,
     physics,
   });
+
+  
 
   startFrameLoop();
 }
