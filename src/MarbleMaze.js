@@ -29,9 +29,9 @@ export async function runMarbleMaze({ canvas, ui }) {
       depth.texture?.destroy?.();
       depth.texture = device.createTexture({
         size: [w, h],
-        format: "depth24plus",
+        format: "depth24plus-stencil8", // ✅ match pipeline
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
-      });
+      });      
       depth.view = depth.texture.createView();
       depth.width = w;
       depth.height = h;
@@ -187,8 +187,6 @@ window.addEventListener("keyup", (e) => {
     ui,
     physics,
   });
-
-  
 
   startFrameLoop();
 }

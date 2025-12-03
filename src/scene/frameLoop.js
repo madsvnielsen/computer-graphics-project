@@ -29,7 +29,7 @@ export function createFrameLoop({
   ui,
   physics,
 }) {
-  const lightPos = [0, 25, 8, 0];
+  const lightPos = [0, 10, 8, 0];
 
   const sphereBuffers = buffers.sphereBuffers;
   const boardBuffers = buffers.boardBuffers;
@@ -42,11 +42,11 @@ export function createFrameLoop({
   const shadowUbo = ubos.shadowUbo ?? ubos.shadow;
 
   function makeUniformData(MVP, modelMat, eye, lightPos) {
-    const kdScale   = 5.8;
-    const ksScale   = 1.0;
+    const kdScale = 5.8;
+    const ksScale = 1.0;
     const shininess = 50;
-    const Le        = 50;
-    const La        = 0.1;
+    const Le = 25;
+    const La = 0.1;
 
     const data = new Float32Array(uboSize / 4);
     let o = 0;
@@ -100,8 +100,8 @@ export function createFrameLoop({
       const proj = mult(Z01, projGL);
 
       // Fixed base camera: orbiting a bit above and to the side
-      const baseRadius   = 45.0;
-      const baseYawDeg   = 0.0;   // around Y
+      const baseRadius = 45.0;
+      const baseYawDeg = 0.0;   // around Y
       const basePitchDeg = 45.0;   // look down
 
       const baseEye = vec4(0.0, 0.0, baseRadius, 1.0);
@@ -157,13 +157,20 @@ export function createFrameLoop({
           depthClearValue: 1.0,
           depthLoadOp: "clear",
           depthStoreOp: "store",
+
+          // NEW: required for stencil formats
+          stencilClearValue: 0,     // clear stencil to 0
+          stencilLoadOp: "clear",
+          stencilStoreOp: "store",
         },
+
       });
 
       // --- NORMAL GEOMETRY PASS (board + sphere) – EXACTLY your old code ---
       pass.setPipeline(pipeline);
 
       // Board
+      pass.setStencilReference(1); // Shadows only land where board is drawn
       const boardData = makeUniformData(MVP, boardModel, eye, lightPos);
       device.queue.writeBuffer(boardUbo, 0, boardData.buffer);
       pass.setBindGroup(0, boardBindGroup);
@@ -173,7 +180,9 @@ export function createFrameLoop({
       pass.setIndexBuffer(boardBuffers.ibuf, "uint32");
       pass.drawIndexed(boardBuffers.indexCount);
 
+
       // Sphere
+      pass.setStencilReference(0); // sphere should not mark stencil
       const sphereData = makeUniformData(MVP, sphereModel, eye, lightPos);
       device.queue.writeBuffer(sphereUbo, 0, sphereData.buffer);
       pass.setBindGroup(0, sphereBindGroup);
@@ -185,34 +194,39 @@ export function createFrameLoop({
 
       // --- SHADOW PASS ---
       {
-        const planeNormal = [0, 1, 0];
-        const boardHeightOffset = fy + 0.01; // match collider top
-        const planeD = boardHeightOffset;
+        // Ball must be above the board to cast a shadow
+        const radius = 1.0; // matches physics sphere radius
+        const ballAboveBoard = by > fy + 0.2 * radius;
+        if (!ballAboveBoard) {
+          // Skip shadow if ball is below or barely touching the board
+          pass.setStencilReference(0); // reset for safety
+        } else {
+          pass.setStencilReference(1);  // only where board wrote 1
 
-        const light = [lightPos[0], lightPos[1], lightPos[2]];
+          const planeNormal = [0, 1, 0];
+          const boardHeightOffset = fy + 0.01; // match collider top
+          const planeD = -boardHeightOffset;
 
-        const Ms = shadowMatrix(planeNormal, planeD, light);
+          const light = [lightPos[0], lightPos[1], lightPos[2]];
 
-        // push shadow downward
-        const dropShadow = translate(0, -2.3, 0); // tweak this value (start around 0.4)
-        const MsFix = mult(dropShadow, Ms);
+          const Ms = shadowMatrix(planeNormal, planeD, light);
+          const shadowMVP = mult(proj, mult(view, Ms));
 
-        const shadowMVP = mult(proj, mult(view, MsFix));
+          const shadowData = new Float32Array(uboSize / 4);
+          shadowData.set(flatten(shadowMVP), 0);
+          shadowData.set(flatten(sphereModel), 16);
+          device.queue.writeBuffer(shadowUbo, 0, shadowData.buffer);
 
-        const shadowData = new Float32Array(uboSize / 4);
-        shadowData.set(flatten(shadowMVP), 0);
-        shadowData.set(flatten(sphereModel), 16);
+          pass.setPipeline(shadowPipeline);
+          pass.setBindGroup(0, shadowBindGroup);
 
-        device.queue.writeBuffer(shadowUbo, 0, shadowData.buffer);
-
-        pass.setPipeline(shadowPipeline);
-        pass.setBindGroup(0, shadowBindGroup);
-
-        pass.setVertexBuffer(0, sphereBuffers.vbuf);
-        pass.setVertexBuffer(1, sphereBuffers.nbuf);
-        pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
-        pass.drawIndexed(sphereBuffers.indexCount);
+          pass.setVertexBuffer(0, sphereBuffers.vbuf);
+          pass.setVertexBuffer(1, sphereBuffers.nbuf);
+          pass.setIndexBuffer(sphereBuffers.ibuf, "uint32");
+          pass.drawIndexed(sphereBuffers.indexCount);
+        }
       }
+
 
 
       pass.end();

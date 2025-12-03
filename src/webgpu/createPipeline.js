@@ -39,10 +39,21 @@ export function createPipeline(device, canvasFormat, code) {
       frontFace: "ccw",
     },
     depthStencil: {
-      format: "depth24plus",
+      format: "depth24plus-stencil8",
       depthWriteEnabled: true,
       depthCompare: "less",
-    },
+    
+      stencilFront: {
+        compare: "always",
+        passOp: "replace",
+      },
+      stencilBack: {
+        compare: "always",
+        passOp: "replace",
+      },
+      stencilReadMask: 0xFF,
+      stencilWriteMask: 0xFF,
+    }    
   });
 
   // Shadow vertex buffer layout: no UVs needed
@@ -86,10 +97,22 @@ const shadowPipeline = device.createRenderPipeline({
     frontFace: "ccw",
   },
   depthStencil: {
-    format: "depth24plus",
+    format: "depth24plus-stencil8",
     depthWriteEnabled: false,
-    depthCompare: "less", // Only draw on visible ground
-  },
+    depthCompare: "less", // Only draw on surfaces NOT in front of shadow
+  
+    stencilFront: {
+      compare: "equal", // Only where board wrote stencil = 1
+      passOp: "keep",
+    },
+    stencilBack: {
+      compare: "equal",
+      passOp: "keep",
+    },
+  
+    stencilReadMask: 0xFF,
+    stencilWriteMask: 0x00,
+  },  
 });
 
   // Return layout too so runMarbleMaze can build bindGroup correctly
