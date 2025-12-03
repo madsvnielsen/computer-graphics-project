@@ -49,7 +49,13 @@ export async function runMarbleMaze({ canvas, ui }) {
 
   // NEW: include extra mat4 (model)
   const uboSize = 16 * 4 * 2 + 4 * 4 * 6;
-  const ubo = device.createBuffer({
+  
+  const boardUbo = device.createBuffer({
+    size: uboSize,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const sphereUbo = device.createBuffer({
     size: uboSize,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
@@ -68,12 +74,21 @@ export async function runMarbleMaze({ canvas, ui }) {
 
   // --- Bind group (must match WGSL bindings) ---
 // --- Bind group (must match WGSL bindings) ---
-const bindGroup = device.createBindGroup({
+const boardBindGroup = device.createBindGroup({
   layout: pipeline.getBindGroupLayout(0),
   entries: [
-    { binding: 0, resource: { buffer: ubo } },  // U
-    { binding: 1, resource: texColor },         // myColorTex
-    { binding: 2, resource: sampler },          // mySampler
+    { binding: 0, resource: { buffer: boardUbo } }, // U (board uniforms)
+    { binding: 1, resource: texColor },             // myColorTex
+    { binding: 2, resource: sampler },              // mySampler
+  ],
+});
+
+const sphereBindGroup = device.createBindGroup({
+  layout: pipeline.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: sphereUbo } }, // U (sphere uniforms)
+    { binding: 1, resource: texColor },              // myColorTex
+    { binding: 2, resource: sampler },               // mySampler
   ],
 });
 
@@ -103,10 +118,11 @@ const bindGroup = device.createBindGroup({
     device,
     context,
     pipeline,
-    bindGroup,
+    bindGroups: {boardBindGroup, sphereBindGroup},
     buffers: {sphereBuffers, boardBuffers},
     depth,
-    ubo,
+    ubos: {boardUbo, sphereUbo},
+    uboSize,
     camera,
     ui,
     physics,
