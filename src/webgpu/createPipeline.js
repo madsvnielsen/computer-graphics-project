@@ -87,8 +87,8 @@ const shadowPipeline = device.createRenderPipeline({
   },
   depthStencil: {
     format: "depth24plus",
-    depthWriteEnabled: false,
-    depthCompare: "greater", // Only draw on visible ground
+    depthWriteEnabled: true,
+    depthCompare: "less-equal", // Only draw on visible ground
   },
 });
 
