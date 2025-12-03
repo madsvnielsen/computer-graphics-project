@@ -27,7 +27,7 @@ export function createFrameLoop({
   ui,
   physics,
 }) {
-  const lightPos = [4, 8, 0, 1];
+  const lightPos = [0, 25, 8, 0];
 
   const sphereBuffers = buffers.sphereBuffers;
   const boardBuffers  = buffers.boardBuffers;
@@ -39,11 +39,11 @@ export function createFrameLoop({
   const sphereUbo = ubos.sphereUbo ?? ubos.sphere;
 
   function makeUniformData(MVP, modelMat, eye, lightPos) {
-    const kdScale   = 1.8;
-    const ksScale   = 50;
-    const shininess = 1008;
-    const Le        = 10;
-    const La        = 0.3;
+    const kdScale   = 5.8;
+    const ksScale   = 1.0;
+    const shininess = 50;
+    const Le        = 50;
+    const La        = 0.1;
 
     const data = new Float32Array(uboSize / 4);
     let o = 0;
@@ -99,7 +99,7 @@ export function createFrameLoop({
       // Fixed base camera: orbiting a bit above and to the side
       const baseRadius   = 45.0;
       const baseYawDeg   = 0.0;   // around Y
-      const basePitchDeg = 35.0;   // look down
+      const basePitchDeg = 45.0;   // look down
 
       const baseEye = vec4(0.0, 0.0, baseRadius, 1.0);
 

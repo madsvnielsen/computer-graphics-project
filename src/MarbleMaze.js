@@ -59,7 +59,7 @@ export async function runMarbleMaze({ canvas, ui }) {
 
   // --- Load textures (Polyhaven ball) ---
   // NOTE: change file names/paths to match your actual files
-  const texColor = await loadTexture(device, "../textures/ball_diff_4k.jpg");
+  const texColor = await loadTexture(device, "../textures/brown-wood.jpg");
   //const texNormal = await loadTexture(device, "../textures/ball_nor_gl_4k.png");
   // Prefer PNG/JPG instead of EXR for the browser:
   //const texRough = await loadTexture(device, "../textures/ball_rough_4k.png");
