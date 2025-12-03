@@ -1,34 +1,92 @@
 import { Constants } from "../config/Constants.js";
 
+// helper: quaternion -> mat4 (column-major, MV.js-style mat4)
+function quatToMat4(x, y, z, w) {
+  const xx = x * x, yy = y * y, zz = z * z;
+  const xy = x * y, xz = x * z, yz = y * z;
+  const wx = w * x, wy = w * y, wz = w * z;
+
+  // column-major: mat4( col0, col1, col2, col3 )
+  return mat4(
+    vec4(1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0),
+    vec4(2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0),
+    vec4(2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0),
+    vec4(0, 0, 0, 1)
+  );
+}
+
 export function createFrameLoop({
   device,
   context,
   pipeline,
   shadowPipeline,
-  bindGroup,
+  bindGroups,
   shadowBindGroup,
   buffers,
   depth,
-  ubo,
-  shadowUbo,
-  camera,
+  ubos,
+  uboSize,
   ui,
   physics,
 }) {
   const lightPos = [4, 8, 0, 1];
   // mvp + model + 6 vec4
-  const uboSize = ubo.size ?? (16 * 4 * 2 + 4 * 4 * 6);
 
   const sphereBuffers = buffers.sphereBuffers;
   const boardBuffers = buffers.boardBuffers;
 
+  const boardBindGroup = bindGroups.boardBindGroup ?? bindGroups.board;
+  const sphereBindGroup = bindGroups.sphereBindGroup ?? bindGroups.sphere;
+
+  const boardUbo = ubos.boardUbo ?? ubos.board;
+  const sphereUbo = ubos.sphereUbo ?? ubos.sphere;
+  const shadowUbo = ubos.shadowUbo ?? ubos.shadow;
+
+  function makeUniformData(MVP, modelMat, eye, lightPos) {
+    const kdScale = 1.8;
+    const ksScale = 50;
+    const shininess = 1008;
+    const Le = 10;
+    const La = 0.3;
+
+    const data = new Float32Array(uboSize / 4);
+    let o = 0;
+
+    data.set(flatten(MVP), o); o += 16;              // mvp
+    data.set(flatten(modelMat), o); o += 16;         // model
+    data.set(eye, o); o += 4;                        // eye
+    data.set(lightPos, o); o += 4;                   // light
+    data.set([1, 1, 1, 0], o); o += 4;               // kd_u
+    data.set([1, 1, 1, 0], o); o += 4;               // ks
+    data.set([kdScale, ksScale, shininess, Le], o); o += 4; // scales
+    data.set([La, La, La, 0], o); o += 4;            // ambient
+
+    return data;
+  }
+
   return function start() {
     function frame() {
-
-      // --- PHYSICS STEP (fixed 60Hz) ---
+      // --- PHYSICS ---
       physics.step(1 / 60);
-      const [bx, by, bz] = physics.getBallPosition();
 
+      // full transform (pos + quat) for the ball
+      const ball = physics.getBallTransform();
+      const [bx, by, bz] = ball.position;
+      const [qx, qy, qz, qw] = ball.rotation;
+
+      const floor = physics.getFloorPositionAndRotation();
+      const fpos = floor.position; // [fx, fy, fz]
+      const pitch = floor.pitch;    // radians (X)
+      const roll = floor.roll;     // radians (Z)
+
+      const fx = fpos[0];
+      const fy = fpos[1];
+      const fz = fpos[2];
+
+      const pitchDegTilt = pitch * 180 / Math.PI;
+      const rollDegTilt = roll * 180 / Math.PI;
+
+      // --- CAMERA / PROJ / VIEW ---
       const canvas = context.canvas;
       const dpr = window.devicePixelRatio || 1;
       const aspect = (canvas.clientWidth * dpr) / (canvas.clientHeight * dpr);
@@ -42,52 +100,51 @@ export function createFrameLoop({
       );
       const proj = mult(Z01, projGL);
 
-      const yaw = camera.getYaw();
-      const pitch = camera.getPitch();
-      const baseEye = vec4(0.0, 0.0, camera.radius, 1.0);
-      const yawDeg = yaw * 180 / Math.PI;
-      const pitchDeg = pitch * 180 / Math.PI;
+      // Fixed base camera: orbiting a bit above and to the side
+      const baseRadius = 45.0;
+      const baseYawDeg = 0.0;   // around Y
+      const basePitchDeg = 35.0;   // look down
 
-      const R = mult(rotateX(pitchDeg), rotateY(yawDeg));
-      const eye4 = mult(R, baseEye);
+      const baseEye = vec4(0.0, 0.0, baseRadius, 1.0);
+
+      const RcamBase = mult(
+        rotateX(basePitchDeg),
+        rotateY(baseYawDeg)
+      );
+
+      // Rotate camera opposite to tilt
+      const RtiltCam = mult(
+        rotateZ(-rollDegTilt),
+        rotateX(-pitchDegTilt)
+      );
+
+      const RcamTotal = mult(RtiltCam, RcamBase);
+
+      const eye4 = mult(RcamTotal, baseEye);
       const eye = [eye4[0], eye4[1], eye4[2], 0.0];
+
+      // Up vector: world up rotated by tilt
+      const upWorld4 = vec4(0, 1, 0, 0);
+      const up4 = mult(RtiltCam, upWorld4);
+      const up = vec3(up4[0], up4[1], up4[2]);
 
       const view = lookAt(
         vec3(eye[0], eye[1], eye[2]),
         vec3(0, 0, 0),
-        vec3(0, 1, 0)
+        up
       );
+
       const MVP = mult(proj, view);
 
-      // model matrix from physics position (simple translation)
-      const model = translate(bx, by, bz);
+      // --- MODEL MATRICES ---
+      // Board: no rotation, just translate to floorPos
+      const boardModel = translate(fx, fy, fz);
 
-      // UI / material params
-      const kdScale = 1.8;
-      const ksScale = 50;
-      const shininess = 1008;
-      const Le = 10;
-      const La = 0.3;
+      // Ball: translate + rotation from physics quaternion
+      const Rball = quatToMat4(qx, qy, qz, qw);
+      const sphereModel = mult(translate(bx, by, bz), Rball);
 
-      // 🔹 ORIGINAL UBO PACKING – unchanged
-      const data = new Float32Array(uboSize / 4);
-      let o = 0;
-      // mvp
-      data.set(flatten(MVP), o); o += 16;
-      // model
-      data.set(flatten(model), o); o += 16;
-      // eye, light, materials etc.
-      data.set(eye, o); o += 4;
-      data.set(lightPos, o); o += 4;
-      data.set([1, 1, 1, 0], o); o += 4;
-      data.set([1, 1, 1, 0], o); o += 4;
-      data.set([kdScale, ksScale, shininess, Le], o); o += 4;
-      data.set([La, La, La, 0], o); o += 4;
-
-      // write main UBO (normal rendering)
-      device.queue.writeBuffer(ubo, 0, data.buffer);
-
-      // --- Command encoder & main pass ---
+      // --- DRAW ---
       const encoder = device.createCommandEncoder();
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
@@ -106,9 +163,11 @@ export function createFrameLoop({
 
       // --- NORMAL GEOMETRY PASS (board + sphere) – EXACTLY your old code ---
       pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
 
       // Board
+      const boardData = makeUniformData(MVP, boardModel, eye, lightPos);
+      device.queue.writeBuffer(boardUbo, 0, boardData.buffer);
+      pass.setBindGroup(0, boardBindGroup);
       pass.setVertexBuffer(0, boardBuffers.vbuf);
       pass.setVertexBuffer(1, boardBuffers.nbuf);
       pass.setVertexBuffer(2, boardBuffers.uvbuf);
@@ -116,6 +175,9 @@ export function createFrameLoop({
       pass.drawIndexed(boardBuffers.indexCount);
 
       // Sphere
+      const sphereData = makeUniformData(MVP, sphereModel, eye, lightPos);
+      device.queue.writeBuffer(sphereUbo, 0, sphereData.buffer);
+      pass.setBindGroup(0, sphereBindGroup);
       pass.setVertexBuffer(0, sphereBuffers.vbuf);
       pass.setVertexBuffer(1, sphereBuffers.nbuf);
       pass.setVertexBuffer(2, sphereBuffers.uvbuf);
@@ -124,20 +186,23 @@ export function createFrameLoop({
 
       // --- SHADOW PASS ---
       {
-        // Project onto board surface (y = 0)
         const planeNormal = [0, 1, 0];
-        const planeD = 0.02; // just above board top
+        const boardHeightOffset = fy + 0.01; // match collider top
+        const planeD = boardHeightOffset;
 
         const light = [lightPos[0], lightPos[1], lightPos[2]];
 
         const Ms = shadowMatrix(planeNormal, planeD, light);
-        const shadowMVP = mult(proj, mult(view, Ms));
 
-        // write to shadow UBO
+        // push shadow downward
+        const dropShadow = translate(0, -2.3, 0); // tweak this value (start around 0.4)
+        const MsFix = mult(dropShadow, Ms);
+
+        const shadowMVP = mult(proj, mult(view, MsFix));
+
         const shadowData = new Float32Array(uboSize / 4);
-        let s = 0;
-        shadowData.set(flatten(shadowMVP), s); s += 16;
-        shadowData.set(flatten(model), s); s += 16;
+        shadowData.set(flatten(shadowMVP), 0);
+        shadowData.set(flatten(sphereModel), 16);
 
         device.queue.writeBuffer(shadowUbo, 0, shadowData.buffer);
 
@@ -152,8 +217,8 @@ export function createFrameLoop({
 
 
       pass.end();
-
       device.queue.submit([encoder.finish()]);
+
       requestAnimationFrame(frame);
     }
 
