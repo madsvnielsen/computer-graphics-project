@@ -54,5 +54,5 @@ for (let i = 0; i < indices.length; i++) {
   });
   device.queue.writeBuffer(ibuf, 0, indices);
 
-  return { vbuf, nbuf, uvbuf, ibuf, indexCount: indices.length };
+  return { vbuf, nbuf, uvbuf, ibuf, indexCount: indices.length, positions, indices};
 }
