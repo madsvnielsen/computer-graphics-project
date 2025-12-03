@@ -1,3 +1,3 @@
 export const Constants = {
-    ClearColor: { r: 0.125, g: 0.227, b: 0.263, a: 1 }
+    ClearColor: { r: 0.125, g: 0.127, b: 0.163, a: 1 }
 }
